@@ -102,6 +102,10 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
                     "aws." FLB_FILTER_AWS_HOSTNAME_KEY,
                     ctx->hostname);
     }
+
+    // REVIEW: What do we use the flb_env_set for?
+    //  Is it used to 'indirectly' access Hostname in another part of the codebase?
+    //  Do we need to set environmental variables for the EC2 instance tags too?
 }
 
 static int cb_aws_init(struct flb_filter_instance *f_ins,
@@ -244,8 +248,10 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
     return 0;
 }
 
-/* get the metadata by key if the result is a json object.
- * If key is NULL, just return the value it get.
+/* Get the metadata by key if the result is a json object.
+ * If key is NULL, it returns all bytes from the response.
+ * If response status code is 404, then it returns -2.
+ * If another unexpected error happened, then it returns -1.
  */
 static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
                                flb_sds_t *metadata, size_t *metadata_len,
@@ -289,17 +295,25 @@ static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
 
     /* Perform request */
     ret = flb_http_do(client, &b_sent);
-    flb_plg_debug(ctx->ins, "IMDS metadata request http_do=%i, HTTP Status: %i",
-                  ret, client->resp.status);
+
+    if (client->resp.payload_size > 0) {
+        flb_plg_debug(ctx->ins, "imds metadata request http_do=%i; %s, status_code: %i"
+                      ", response: %s", ret, metadata_path, client->resp.status,
+                      client->resp.payload);
+    }
+    else {
+        flb_plg_debug(ctx->ins, "imds metadata request http_do=%i; %s, status_code: %i",
+                  ret, metadata_path, client->resp.status);
+    }
 
     if (ret != 0 || client->resp.status != 200) {
-        if (client->resp.payload_size > 0) {
-            flb_plg_debug(ctx->ins, "IMDS metadata request\n%s",
-                          client->resp.payload);
+        ret = -1;
+        if (client->resp.status == 404) {
+            ret = -2;
         }
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
-        return -1;
+        return ret;
     }
 
     if (key != NULL) {
@@ -311,7 +325,8 @@ static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
             flb_plg_error(ctx->ins,
                          "%s is undefined in EC2 instance", key);
         }
-    } else {
+    }
+    else {
         tmp = flb_sds_create_len(client->resp.payload, client->resp.payload_size);
     }
 
@@ -337,7 +352,7 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
                                metadata_len, NULL);
 }
 
-/* get VPC metadata, it called IMDS twice.
+/* Get VPC metadata, it called IMDS twice.
  * First is for getting the Mac ID and combine into the path for VPC.
  * Second call is using the VPC path to get the VPC id
  */
@@ -367,6 +382,134 @@ static int get_vpc_metadata(struct flb_filter_aws *ctx)
     flb_sds_destroy(mac_id);
     flb_sds_destroy(vpc_path);
 
+    return ret;
+}
+
+/* Get EC2 instance tag keys from /latest/meta-data/tags/instance.
+ * Initializes ctx->tags_count, ctx->tag_keys and ctx->tag_keys_len.
+ */
+static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
+{
+    int ret;
+    flb_sds_t tags_list = NULL;
+    size_t len = 0;
+    size_t tag_index = 0;
+    size_t tag_start = 0;
+    size_t tag_end = 0;
+    size_t characters_to_copy;
+    size_t i;
+
+    /* get a list of tag keys from the meta data server */
+    ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_INSTANCE_TAG, &tags_list, &len);
+    if (ret < 0) {
+        if (ret == -2) {
+            flb_warn("[filter_aws] tags not available in the EC2 instance metadata");
+            ctx->tags_count = 0;
+            return 0;
+        }
+        flb_sds_destroy(tags_list);
+        return -1;
+    }
+    /* count number of tag keys and allocate memory */
+    /* it assumes there always is at least one tag */
+    /* starts with 1, because '\n' is a split character */
+    ctx->tags_count = 1;
+    for (i = 0; i < len; i++) {
+        if (tags_list[i] == '\n') {
+            ctx->tags_count++;
+        }
+    }
+    ctx->tag_keys = flb_calloc(ctx->tags_count, sizeof(flb_sds_t*));
+    ctx->tag_keys_len = flb_calloc(ctx->tags_count, sizeof(size_t*));
+
+    /* go over the response and initialize tag_keys values */
+    /* code below finds two indices which define tag key and copies them to ctx */
+    while (tag_end <= len) {
+        if (tags_list[tag_end] == '\n') {
+            tags_list[tag_end] = '\0';
+        }
+        if ((tags_list[tag_end] == '\0' || tag_end == len) && (tag_start < tag_end)) {
+            /* length of the key + 1 place for null character */
+            characters_to_copy = tag_end - tag_start;
+
+            ctx->tag_keys_len[tag_index] = characters_to_copy;
+            ctx->tag_keys[tag_index] = flb_sds_create_size(characters_to_copy + 1);
+            if (ctx->tag_keys[tag_index] == NULL) {
+                flb_sds_destroy(tags_list);
+                return -2;
+            }
+
+            flb_sds_t tag_key = tags_list + tag_start;
+            strcpy(ctx->tag_keys[tag_index], tag_key);
+            flb_debug("[filter_aws] tag found: %s (len=%d)", ctx->tag_keys[tag_index],
+                      characters_to_copy);
+
+            tag_index++;
+            tag_start = tag_end + 1;
+        }
+        tag_end++;
+    }
+
+    flb_sds_destroy(tags_list);
+
+    return ret;
+}
+
+/* Get EC2 instance tag values from /latest/meta-data/tags/instance/{tag_key}.
+ * Initializes ctx->tag_values and ctx->tag_values_len.
+ */
+static int get_ec2_tag_values(struct flb_filter_aws *ctx)
+{
+    int ret;
+    size_t i;
+    flb_sds_t tag_value = NULL;
+    size_t tag_value_len = 0;
+    size_t tag_value_path_len;
+    flb_sds_t tag_value_path;
+
+    /* initialize array for the tag values */
+    ctx->tag_values = flb_calloc(ctx->tags_count, sizeof(flb_sds_t*));
+    ctx->tag_values_len = flb_calloc(ctx->tags_count, sizeof(size_t*));
+
+    for (i = 0; i < ctx->tags_count; i++) {
+        /* fetch tag value using path: /latest/meta-data/tags/instance/{tag_name} */
+        tag_value_path_len = ctx->tag_keys_len[i] + 1 +
+                             strlen(FLB_FILTER_AWS_IMDS_INSTANCE_TAG);
+        tag_value_path = flb_sds_create_size(tag_value_path_len);
+        tag_value_path = flb_sds_printf(&tag_value_path, "%s/%s",
+                                        FLB_FILTER_AWS_IMDS_INSTANCE_TAG,
+                                        ctx->tag_keys[i]);
+
+        ret = get_metadata(ctx, tag_value_path, &tag_value, &tag_value_len);
+        if (ret < 0) {
+            flb_sds_destroy(tag_value_path);
+            if (ret == -2) {
+                flb_error("[filter_aws] no value for tag %s", ctx->tag_keys[i]);
+                continue;
+            }
+            return ret;
+        }
+
+        ctx->tag_values[i] = tag_value;
+        ctx->tag_values_len[i] = tag_value_len;
+
+        flb_sds_destroy(tag_value_path);
+    }
+
+    return 0;
+}
+
+static int get_ec2_tags(struct flb_filter_aws *ctx)
+{
+    int ret;
+    ret = get_ec2_tag_keys(ctx);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = get_ec2_tag_values(ctx);
+    if (ret < 0) {
+        return ret;
+    }
     return ret;
 }
 
@@ -465,6 +608,14 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
             return -1;
         }
         ctx->new_keys++;
+    }
+
+    if (ctx->tags_include && (!ctx->tag_keys || !ctx->tag_values)) {
+        ret = get_ec2_tags(ctx);
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->new_keys += ctx->tags_count;
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
@@ -627,6 +778,18 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->hostname, ctx->hostname_len);
         }
+
+        if (ctx->tags_include) {
+            for (i = 0; i < ctx->tags_count; i++) {
+                msgpack_pack_str(&tmp_pck, ctx->tag_keys_len[i]);
+                msgpack_pack_str_body(&tmp_pck,
+                                    ctx->tag_keys[i],
+                                    ctx->tag_keys_len[i]);
+                msgpack_pack_str(&tmp_pck, ctx->tag_values_len[i]);
+                msgpack_pack_str_body(&tmp_pck,
+                                    ctx->tag_values[i], ctx->tag_values_len[i]);
+            }
+        }
     }
     msgpack_unpacked_destroy(&result);
 
@@ -638,6 +801,8 @@ static int cb_aws_filter(const void *data, size_t bytes,
 
 static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 {
+    size_t i;
+
     if (ctx->ec2_upstream) {
         flb_upstream_destroy(ctx->ec2_upstream);
     }
@@ -676,6 +841,29 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 
     if (ctx->hostname) {
         flb_sds_destroy(ctx->hostname);
+    }
+
+    if (ctx->tag_keys) {
+        for (i = 0; i < ctx->tags_count; i++) {
+            if (ctx->tag_keys[i]) {
+                flb_sds_destroy(ctx->tag_keys[i]);
+            }
+        }
+        flb_free(ctx->tag_keys);
+    }
+    if (ctx->tag_values) {
+        for (i = 0; i < ctx->tags_count; i++) {
+            if (ctx->tag_values[i]) {
+                flb_sds_destroy(ctx->tag_values[i]);
+            }
+        }
+        flb_free(ctx->tag_values);
+    }
+    if (ctx->tag_keys_len) {
+        flb_free(ctx->tag_keys_len);
+    }
+    if (ctx->tag_values_len) {
+        flb_free(ctx->tag_values_len);
     }
 
     flb_free(ctx);
@@ -739,6 +927,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "hostname", "false",
      0, FLB_TRUE, offsetof(struct flb_filter_aws, hostname_include),
      "Enable EC2 instance hostname"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "tags", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tags_include),
+     "Enable EC2 instance tags"
     },
     {0}
 };

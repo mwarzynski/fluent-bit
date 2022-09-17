@@ -43,6 +43,7 @@
 #define FLB_FILTER_AWS_IMDS_ACCOUNT_ID_PATH               "/latest/dynamic/instance-identity/document/"
 #define FLB_FILTER_AWS_IMDS_HOSTNAME_PATH                 "/latest/meta-data/hostname/"
 #define FLB_FILTER_AWS_IMDS_MAC_PATH                      "/latest/meta-data/mac/"
+#define FLB_FILTER_AWS_IMDS_INSTANCE_TAG                  "/latest/meta-data/tags/instance"
 
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER               "X-aws-ec2-metadata-token"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN           24
@@ -106,10 +107,16 @@ struct flb_filter_aws {
     size_t account_id_len;
     int account_id_include;
 
-
     flb_sds_t hostname;
     size_t hostname_len;
     int hostname_include;
+
+    flb_sds_t *tag_keys;
+    size_t *tag_keys_len;
+    flb_sds_t *tag_values;
+    size_t *tag_values_len;
+    size_t tags_count;
+    int tags_include;
 
     /* number of new keys added by this plugin */
     int new_keys;
