@@ -50,6 +50,8 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
 {
     struct flb_env *env;
     struct flb_config *config = ctx->ins->config;
+    size_t i;
+    flb_sds_t env_tag_name;
 
     env = config->env;
 
@@ -103,8 +105,17 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
                     ctx->hostname);
     }
 
-    /* TODO: Set EC2 tags as environment variables. */
-    /* Proposed format: aws.ec2.tags.{AWS tag key} */
+    for (i = 0; i < ctx->tags_count; i++) {
+        /* len("aws.ec2.tags.") = 13 */
+        env_tag_name = flb_sds_create_size(13 + ctx->tag_keys_len[i]);
+        if (!env_tag_name) {
+            flb_plg_error(ctx->ins, "failed to allocate memory for env tag name");
+            continue;
+        }
+        env_tag_name = flb_sds_printf(&env_tag_name, "aws.ec2.tags.%s", ctx->tag_keys[i]);
+        flb_env_set(env, env_tag_name, ctx->tag_values[i]);
+        flb_sds_destroy(env_tag_name);
+    }
 }
 
 static int cb_aws_init(struct flb_filter_instance *f_ins,
