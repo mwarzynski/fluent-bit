@@ -389,6 +389,41 @@ static int get_vpc_metadata(struct flb_filter_aws *ctx)
     return ret;
 }
 
+void flb_filter_aws_tags_destroy(struct flb_filter_aws *ctx)
+{
+    size_t i;
+    if (!ctx) {
+        return;
+    }
+    if (ctx->tag_keys) {
+        for (i = 0; i < ctx->tags_count; i++) {
+            if (ctx->tag_keys[i]) {
+                flb_sds_destroy(ctx->tag_keys[i]);
+            }
+        }
+        flb_free(ctx->tag_keys);
+        ctx->tag_keys = NULL;
+    }
+    if (ctx->tag_values) {
+        for (i = 0; i < ctx->tags_count; i++) {
+            if (ctx->tag_values[i]) {
+                flb_sds_destroy(ctx->tag_values[i]);
+            }
+        }
+        flb_free(ctx->tag_values);
+        ctx->tag_values = NULL;
+    }
+    if (ctx->tag_keys_len) {
+        flb_free(ctx->tag_keys_len);
+    }
+    ctx->tag_keys_len = NULL;
+    if (ctx->tag_values_len) {
+        flb_free(ctx->tag_values_len);
+    }
+    ctx->tag_values_len = NULL;
+    ctx->tags_count = 0;
+}
+
 /* Get EC2 instance tag keys from /latest/meta-data/tags/instance.
  * Initializes ctx->tags_count, ctx->tag_keys and ctx->tag_keys_len.
  */
@@ -540,6 +575,11 @@ static int get_ec2_tag_values(struct flb_filter_aws *ctx)
 static int get_ec2_tags(struct flb_filter_aws *ctx)
 {
     int ret;
+
+    /* get_ec2_tags function might be called multiple times, so we need to always */
+    /* free memory for tags in case of previous allocations */
+    flb_filter_aws_tags_destroy(ctx);
+
     ret = get_ec2_tag_keys(ctx);
     if (ret < 0) {
         return ret;
@@ -839,8 +879,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
 
 static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 {
-    size_t i;
-
     if (ctx->ec2_upstream) {
         flb_upstream_destroy(ctx->ec2_upstream);
     }
@@ -881,28 +919,7 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
         flb_sds_destroy(ctx->hostname);
     }
 
-    if (ctx->tag_keys) {
-        for (i = 0; i < ctx->tags_count; i++) {
-            if (ctx->tag_keys[i]) {
-                flb_sds_destroy(ctx->tag_keys[i]);
-            }
-        }
-        flb_free(ctx->tag_keys);
-    }
-    if (ctx->tag_values) {
-        for (i = 0; i < ctx->tags_count; i++) {
-            if (ctx->tag_values[i]) {
-                flb_sds_destroy(ctx->tag_values[i]);
-            }
-        }
-        flb_free(ctx->tag_values);
-    }
-    if (ctx->tag_keys_len) {
-        flb_free(ctx->tag_keys_len);
-    }
-    if (ctx->tag_values_len) {
-        flb_free(ctx->tag_values_len);
-    }
+    flb_filter_aws_tags_destroy(ctx);
 
     flb_free(ctx);
 }
