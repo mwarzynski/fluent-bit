@@ -506,6 +506,8 @@ add_subdirectory(${FLB_PATH_LIB_JSMN})
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
+  add_definitions(-DFLB_FILTER_AWS_IMDS_HOST="127.0.0.1")
+  add_definitions(-DFLB_FILTER_AWS_IMDS_PORT=8000)
 endif()
 
 # MK Core

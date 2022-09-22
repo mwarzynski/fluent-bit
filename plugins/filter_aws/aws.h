@@ -31,7 +31,12 @@
 
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL                  21600
 
+#ifndef FLB_FILTER_AWS_IMDS_HOST
 #define FLB_FILTER_AWS_IMDS_HOST                          "169.254.169.254"
+#endif
+#ifndef FLB_FILTER_AWS_IMDS_PORT
+#define FLB_FILTER_AWS_IMDS_PORT                          80
+#endif
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_PATH                 "/latest/api/token"
 
 #define FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH              "/latest/meta-data/instance-id/"

@@ -167,7 +167,7 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
 
     ctx->ec2_upstream = flb_upstream_create(config,
                                             FLB_FILTER_AWS_IMDS_HOST,
-                                            80,
+                                            FLB_FILTER_AWS_IMDS_PORT,
                                             FLB_IO_TCP,
                                             NULL);
     if (!ctx->ec2_upstream) {
@@ -215,7 +215,7 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
     client = flb_http_client(u_conn, FLB_HTTP_PUT,
                              FLB_FILTER_AWS_IMDS_V2_TOKEN_PATH,
                              NULL, 0, FLB_FILTER_AWS_IMDS_HOST,
-                             80, NULL, 0);
+                             FLB_FILTER_AWS_IMDS_PORT, NULL, 0);
 
     if (!client) {
         flb_plg_error(ctx->ins, "count not create http client");
@@ -283,7 +283,7 @@ static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
     client = flb_http_client(u_conn,
                              FLB_HTTP_GET, metadata_path,
                              NULL, 0,
-                             FLB_FILTER_AWS_IMDS_HOST, 80,
+                             FLB_FILTER_AWS_IMDS_HOST, FLB_FILTER_AWS_IMDS_PORT,
                              NULL, 0);
 
     if (!client) {
