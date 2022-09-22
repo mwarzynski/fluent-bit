@@ -402,7 +402,7 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
     ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_INSTANCE_TAG, &tags_list, &len);
     if (ret < 0) {
         if (ret == -2) {
-            flb_warn("[filter_aws] tags not available in the EC2 instance metadata");
+            flb_plg_warn(ctx->ins, "tags not available in the EC2 instance metadata");
             ctx->tags_count = 0;
             return 0;
         }
@@ -440,8 +440,8 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
 
             flb_sds_t tag_key = tags_list + tag_start;
             strcpy(ctx->tag_keys[tag_index], tag_key);
-            flb_debug("[filter_aws] tag found: %s (len=%d)", ctx->tag_keys[tag_index],
-                      characters_to_copy);
+            flb_plg_debug(ctx->ins, "tag found: %s (len=%d)", ctx->tag_keys[tag_index],
+                          characters_to_copy);
 
             tag_index++;
             tag_start = tag_end + 1;
@@ -483,7 +483,7 @@ static int get_ec2_tag_values(struct flb_filter_aws *ctx)
         if (ret < 0) {
             flb_sds_destroy(tag_value_path);
             if (ret == -2) {
-                flb_error("[filter_aws] no value for tag %s", ctx->tag_keys[i]);
+                flb_plg_error(ctx->ins, "no value for tag %s", ctx->tag_keys[i]);
                 continue;
             }
             return ret;
