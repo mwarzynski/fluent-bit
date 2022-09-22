@@ -401,13 +401,13 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
     size_t tag_start = 0;
     size_t tag_end = 0;
     flb_sds_t tag_key;
-    size_t characters_to_copy;
+    size_t tag_key_len;
     size_t i;
 
     /* get a list of tag keys from the meta data server */
     ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_INSTANCE_TAG, &tags_list, &len);
     if (ret < 0) {
-        if (ret == -2) {
+        if (ret == -2) { /* if there are no tags, response status code is 404 */
             flb_plg_warn(ctx->ins, "tags not available in the EC2 instance metadata");
             ctx->tags_count = 0;
             return 0;
@@ -415,9 +415,10 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
         flb_sds_destroy(tags_list);
         return -1;
     }
-    /* count number of tag keys and allocate memory */
-    /* it assumes there always is at least one tag */
-    /* starts with 1, because '\n' is a split character */
+
+    /* count number of tag keys and allocate memory for pointers and lengths */
+    /* since get_metadata returned 0, we assume there is at least 1 tag */
+    /* \n is separator, therefore number of items = number of \n + 1 */
     ctx->tags_count = 1;
     for (i = 0; i < len; i++) {
         if (tags_list[i] == '\n') {
@@ -440,25 +441,34 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
     /* go over the response and initialize tag_keys values */
     /* code below finds two indices which define tag key and copies them to ctx */
     while (tag_end <= len) {
+        /* replace \n with \0 to 'clearly' separate tag key strings */
         if (tags_list[tag_end] == '\n') {
             tags_list[tag_end] = '\0';
         }
         if ((tags_list[tag_end] == '\0' || tag_end == len) && (tag_start < tag_end)) {
-            /* length of the key + 1 place for null character */
-            characters_to_copy = tag_end - tag_start;
+            /* length of tag key characters is the difference between start and end */
+            /* for instance, if tag name is 'Name\0...', the corresponding values are */
+            /*   tag_start = 0, points to 'N' */
+            /*   tag_end = 4, points to '\0' just after 'e' */
+            /*   f.e.: 4 - 0 = 4, which is equal to len("Name") */
+            tag_key_len = tag_end - tag_start;
+            ctx->tag_keys_len[tag_index] = tag_key_len;
 
-            ctx->tag_keys_len[tag_index] = characters_to_copy;
-            ctx->tag_keys[tag_index] = flb_sds_create_size(characters_to_copy + 1);
+            /* allocate new memory for the tag key value */
+            /* + 1, because we need one more character for \0 */
+            ctx->tag_keys[tag_index] = flb_sds_create_size(tag_key_len + 1);
             if (!ctx->tag_keys[tag_index]) {
                 flb_errno();
                 flb_sds_destroy(tags_list);
                 return -2;
             }
 
+            /* tag_key points to the first character of tag key as char* */
             tag_key = tags_list + tag_start;
             strcpy(ctx->tag_keys[tag_index], tag_key);
+
             flb_plg_debug(ctx->ins, "tag found: %s (len=%d)", ctx->tag_keys[tag_index],
-                          characters_to_copy);
+                          tag_key_len);
 
             tag_index++;
             tag_start = tag_end + 1;
