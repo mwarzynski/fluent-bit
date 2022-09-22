@@ -928,7 +928,7 @@ static struct flb_config_map config_map[] = {
      "Enable EC2 instance hostname"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "tags", "false",
+     FLB_CONFIG_MAP_BOOL, "tags_enabled", "false",
      0, FLB_TRUE, offsetof(struct flb_filter_aws, tags_include),
      "Enable EC2 instance tags"
     },
