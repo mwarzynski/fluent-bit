@@ -395,6 +395,7 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
     size_t tag_index = 0;
     size_t tag_start = 0;
     size_t tag_end = 0;
+    flb_sds_t tag_key;
     size_t characters_to_copy;
     size_t i;
 
@@ -438,7 +439,7 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
                 return -2;
             }
 
-            flb_sds_t tag_key = tags_list + tag_start;
+            tag_key = tags_list + tag_start;
             strcpy(ctx->tag_keys[tag_index], tag_key);
             flb_plg_debug(ctx->ins, "tag found: %s (len=%d)", ctx->tag_keys[tag_index],
                           characters_to_copy);
