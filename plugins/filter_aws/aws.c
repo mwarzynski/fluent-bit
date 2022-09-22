@@ -103,9 +103,8 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
                     ctx->hostname);
     }
 
-    // REVIEW: What do we use the flb_env_set for?
-    //  Is it used to 'indirectly' access Hostname in another part of the codebase?
-    //  Do we need to set environmental variables for the EC2 instance tags too?
+    /* TODO: Set EC2 tags as environment variables. */
+    /* Proposed format: aws.ec2.tags.{AWS tag key} */
 }
 
 static int cb_aws_init(struct flb_filter_instance *f_ins,
