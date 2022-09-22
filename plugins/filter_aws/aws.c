@@ -373,6 +373,11 @@ static int get_vpc_metadata(struct flb_filter_aws *ctx)
      *latest/meta-data/network/interfaces/macs/{mac_id}/vpc-id/"
      */
     flb_sds_t vpc_path = flb_sds_create_size(70);
+    if (!vpc_path) {
+        flb_errno();
+        flb_sds_destroy(mac_id);
+        return -1;
+    }
     vpc_path = flb_sds_printf(&vpc_path, "%s/%s/%s/",
                               "/latest/meta-data/network/interfaces/macs",
                               mac_id, "vpc-id");
@@ -420,7 +425,17 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
         }
     }
     ctx->tag_keys = flb_calloc(ctx->tags_count, sizeof(flb_sds_t*));
+    if (!ctx->tag_keys) {
+        flb_errno();
+        flb_sds_destroy(tags_list);
+        return -1;
+    }
     ctx->tag_keys_len = flb_calloc(ctx->tags_count, sizeof(size_t*));
+    if (!ctx->tag_keys_len) {
+        flb_errno();
+        flb_sds_destroy(tags_list);
+        return -1;
+    }
 
     /* go over the response and initialize tag_keys values */
     /* code below finds two indices which define tag key and copies them to ctx */
@@ -434,7 +449,8 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
 
             ctx->tag_keys_len[tag_index] = characters_to_copy;
             ctx->tag_keys[tag_index] = flb_sds_create_size(characters_to_copy + 1);
-            if (ctx->tag_keys[tag_index] == NULL) {
+            if (!ctx->tag_keys[tag_index]) {
+                flb_errno();
                 flb_sds_destroy(tags_list);
                 return -2;
             }
@@ -469,13 +485,25 @@ static int get_ec2_tag_values(struct flb_filter_aws *ctx)
 
     /* initialize array for the tag values */
     ctx->tag_values = flb_calloc(ctx->tags_count, sizeof(flb_sds_t*));
+    if (!ctx->tag_values) {
+        flb_errno();
+        return -1;
+    }
     ctx->tag_values_len = flb_calloc(ctx->tags_count, sizeof(size_t*));
+    if (!ctx->tag_values_len) {
+        flb_errno();
+        return -1;
+    }
 
     for (i = 0; i < ctx->tags_count; i++) {
         /* fetch tag value using path: /latest/meta-data/tags/instance/{tag_name} */
         tag_value_path_len = ctx->tag_keys_len[i] + 1 +
                              strlen(FLB_FILTER_AWS_IMDS_INSTANCE_TAG);
         tag_value_path = flb_sds_create_size(tag_value_path_len);
+        if (!tag_value_path) {
+            flb_errno();
+            return -1;
+        }
         tag_value_path = flb_sds_printf(&tag_value_path, "%s/%s",
                                         FLB_FILTER_AWS_IMDS_INSTANCE_TAG,
                                         ctx->tag_keys[i]);
