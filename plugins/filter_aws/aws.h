@@ -67,7 +67,8 @@
 
 struct flb_filter_aws {
     /* upstream connection to ec2 IMDS */
-    struct flb_upstream *ec2_upstream;
+    struct flb_aws_client *client_aws;
+    struct flb_aws_imds *client_imds;
 
     /*
      * IMDSv2 requires a token which must be present in metadata requests
