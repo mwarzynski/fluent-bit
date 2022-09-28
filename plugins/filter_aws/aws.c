@@ -121,8 +121,8 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     int imds_version = FLB_AWS_IMDS_VERSION_2;
     int ret;
     struct flb_filter_aws *ctx = NULL;
+    struct flb_filter_aws_init_options *options = data;
     const char *tmp = NULL;
-    (void) data;
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct flb_filter_aws));
@@ -147,6 +147,23 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
         }
     }
 
+    struct flb_aws_client_generator *generator;
+    if (options && options->client_generator) {
+        generator = options->client_generator;
+        flb_plg_info(ctx->ins, "options: %s", options->name);
+    } else {
+        generator = flb_aws_client_generator();
+    }
+    ctx->client_aws = generator->create();
+    ctx->client_aws->name = "ec2_imds_provider_client";
+    ctx->client_aws->has_auth = FLB_FALSE;
+    ctx->client_aws->provider = NULL;
+    ctx->client_aws->region = NULL;
+    ctx->client_aws->service = NULL;
+    ctx->client_aws->port = FLB_AWS_IMDS_PORT;
+    ctx->client_aws->flags = 0;
+    ctx->client_aws->proxy = NULL;
+
     struct flb_upstream *upstream;
     upstream = flb_upstream_create(config, FLB_AWS_IMDS_HOST, FLB_AWS_IMDS_PORT,
                                    FLB_IO_TCP, NULL);
@@ -159,18 +176,6 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
     upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
     upstream->base.net.keepalive = FLB_FALSE; /* On timeout, the connection is broken */
-
-    struct flb_aws_client_generator *generator = flb_aws_client_generator();
-    ctx->client_aws = generator->create();
-
-    ctx->client_aws->name = "ec2_imds_provider_client";
-    ctx->client_aws->has_auth = FLB_FALSE;
-    ctx->client_aws->provider = NULL;
-    ctx->client_aws->region = NULL;
-    ctx->client_aws->service = NULL;
-    ctx->client_aws->port = FLB_AWS_IMDS_PORT;
-    ctx->client_aws->flags = 0;
-    ctx->client_aws->proxy = NULL;
     ctx->client_aws->upstream = upstream;
 
     ctx->client_imds = flb_aws_imds_create(&flb_aws_imds_config_default, ctx->client_aws);
@@ -727,10 +732,11 @@ static int cb_aws_filter(const void *data, size_t bytes,
 static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 {
     if (ctx->client_aws) {
-        // flb_upstream_destroy(ctx->client_aws);
+        flb_aws_client_destroy(ctx->client_aws);
     }
+
     if (ctx->client_imds) {
-        // flb_upstream_destroy(ctx->client_imds);
+        flb_aws_imds_destroy(ctx->client_imds);
     }
 
     if (ctx->availability_zone) {
