@@ -25,26 +25,10 @@
 
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER           "X-aws-ec2-metadata-token-ttl-seconds"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_LEN       36
-
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_VAL       "21600"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_VAL_LEN   5
-
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL                  21600
-
-#define FLB_FILTER_AWS_IMDS_HOST                          "169.254.169.254"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_PATH                 "/latest/api/token"
-
-#define FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH              "/latest/meta-data/instance-id/"
-#define FLB_FILTER_AWS_IMDS_AZ_PATH                       "/latest/meta-data/placement/availability-zone/"
-#define FLB_FILTER_AWS_IMDS_INSTANCE_TYPE_PATH            "/latest/meta-data/instance-type/"
-#define FLB_FILTER_AWS_IMDS_PRIVATE_IP_PATH               "/latest/meta-data/local-ipv4/"
-#define FLB_FILTER_AWS_IMDS_VPC_ID_PATH_PREFIX            "/latest/meta-data/network/interfaces/macs/"
-#define FLB_FILTER_AWS_IMDS_AMI_ID_PATH                   "/latest/meta-data/ami-id/"
-#define FLB_FILTER_AWS_IMDS_ACCOUNT_ID_PATH               "/latest/dynamic/instance-identity/document/"
-#define FLB_FILTER_AWS_IMDS_HOSTNAME_PATH                 "/latest/meta-data/hostname/"
-#define FLB_FILTER_AWS_IMDS_MAC_PATH                      "/latest/meta-data/mac/"
-#define FLB_FILTER_AWS_IMDS_INSTANCE_TAG                  "/latest/meta-data/tags/instance"
-
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER               "X-aws-ec2-metadata-token"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN           24
 

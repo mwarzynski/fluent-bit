@@ -300,7 +300,7 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
     size_t i;
 
     /* get a list of tag keys from the meta data server */
-    ret = flb_aws_imds_request(ctx->client_imds, FLB_FILTER_AWS_IMDS_INSTANCE_TAG, &tags_list, &len);
+    ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_TAG, &tags_list, &len);
     if (ret < 0) {
         if (ret == -2) { /* if there are no tags, response status code is 404 */
             flb_plg_warn(ctx->ins, "tags not available in the EC2 instance metadata");
@@ -403,14 +403,14 @@ static int get_ec2_tag_values(struct flb_filter_aws *ctx)
     for (i = 0; i < ctx->tags_count; i++) {
         /* fetch tag value using path: /latest/meta-data/tags/instance/{tag_name} */
         tag_value_path_len = ctx->tag_keys_len[i] + 1 +
-                             strlen(FLB_FILTER_AWS_IMDS_INSTANCE_TAG);
+                             strlen(FLB_AWS_IMDS_INSTANCE_TAG);
         tag_value_path = flb_sds_create_size(tag_value_path_len);
         if (!tag_value_path) {
             flb_errno();
             return -1;
         }
         tag_value_path = flb_sds_printf(&tag_value_path, "%s/%s",
-                                        FLB_FILTER_AWS_IMDS_INSTANCE_TAG,
+                                        FLB_AWS_IMDS_INSTANCE_TAG,
                                         ctx->tag_keys[i]);
 
         ret = flb_aws_imds_request(ctx->client_imds, tag_value_path, &tag_value, &tag_value_len);
@@ -460,7 +460,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     int ret;
 
     if (ctx->instance_id_include && !ctx->instance_id) {
-        ret = flb_aws_imds_request(ctx->client_imds, FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH,
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_ID_PATH,
                                    &ctx->instance_id,
                                    &ctx->instance_id_len);
         if (ret < 0) {
@@ -470,7 +470,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->availability_zone_include && !ctx->availability_zone) {
-        ret = flb_aws_imds_request(ctx->client_imds, FLB_FILTER_AWS_IMDS_AZ_PATH,
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_AZ_PATH,
                            &ctx->availability_zone,
                            &ctx->availability_zone_len);
 
@@ -481,7 +481,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->instance_type_include && !ctx->instance_type) {
-        ret = flb_aws_imds_request(ctx->client_imds, FLB_FILTER_AWS_IMDS_INSTANCE_TYPE_PATH,
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_TYPE_PATH,
                            &ctx->instance_type, &ctx->instance_type_len);
 
         if (ret < 0) {
@@ -491,7 +491,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->private_ip_include && !ctx->private_ip) {
-        ret = flb_aws_imds_request(ctx->client_imds, FLB_FILTER_AWS_IMDS_PRIVATE_IP_PATH,
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_PRIVATE_IP_PATH,
                            &ctx->private_ip, &ctx->private_ip_len);
 
         if (ret < 0) {
@@ -510,7 +510,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->ami_id_include && !ctx->ami_id) {
-        ret = flb_aws_imds_request(ctx->client_imds, FLB_FILTER_AWS_IMDS_AMI_ID_PATH,
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_AMI_ID_PATH,
                            &ctx->ami_id, &ctx->ami_id_len);
 
         if (ret < 0) {
@@ -520,7 +520,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->account_id_include && !ctx->account_id) {
-        ret = flb_aws_imds_request_by_key(ctx->client_imds, FLB_FILTER_AWS_IMDS_ACCOUNT_ID_PATH,
+        ret = flb_aws_imds_request_by_key(ctx->client_imds, FLB_AWS_IMDS_ACCOUNT_ID_PATH,
                                   &ctx->account_id, &ctx->account_id_len,
                                   "accountId");
 
@@ -531,7 +531,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->hostname_include && !ctx->hostname) {
-        ret = flb_aws_imds_request(ctx->client_imds, FLB_FILTER_AWS_IMDS_HOSTNAME_PATH,
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_HOSTNAME_PATH,
                            &ctx->hostname, &ctx->hostname_len);
 
         if (ret < 0) {
