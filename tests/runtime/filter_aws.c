@@ -6,8 +6,8 @@
 #include "flb_tests_runtime.h"
 #include "../../plugins/filter_aws/aws.h"
 
-#include "aws_client_mock.h"
-#include "aws_client_mock.c"
+#include "../include/aws_client_mock.h"
+#include "../include/aws_client_mock.c"
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 char *output = NULL;
@@ -151,7 +151,7 @@ void flb_test_aws_ec2_tags_present() {
     flb_free(ops);
 
     set_output(NULL);
-    // // flb_aws_client_mock_destroy_generator();
+    // flb_aws_client_mock_destroy_generator();
 }
 
 
