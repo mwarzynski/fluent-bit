@@ -23,15 +23,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER           "X-aws-ec2-metadata-token-ttl-seconds"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_LEN       36
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_VAL       "21600"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_VAL_LEN   5
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL                  21600
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_PATH                 "/latest/api/token"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER               "X-aws-ec2-metadata-token"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN           24
-
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY              "az"
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY_LEN          2
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY                    "ec2_instance_id"
