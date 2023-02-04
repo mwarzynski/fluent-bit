@@ -37,6 +37,7 @@
 #include <msgpack.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 
 #include "aws.h"
 
@@ -249,6 +250,10 @@ void flb_filter_aws_tags_destroy(struct flb_filter_aws *ctx)
         flb_free(ctx->tag_values_len);
     }
     ctx->tag_values_len = NULL;
+    if (ctx->tag_is_enabled) {
+        flb_free(ctx->tag_is_enabled);
+    }
+    ctx->tag_is_enabled = NULL;
     ctx->tags_count = 0;
 }
 
@@ -347,9 +352,6 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
             tag_key = tags_list + tag_start;
             memcpy(ctx->tag_keys[tag_index], tag_key, tag_key_len);
 
-            flb_plg_debug(ctx->ins, "tag found: %s (len=%d)", ctx->tag_keys[tag_index],
-                          tag_key_len);
-
             tag_index++;
             tag_start = tag_end + 1;
         }
@@ -427,8 +429,110 @@ static int get_ec2_tag_values(struct flb_filter_aws *ctx)
     return 0;
 }
 
+static int tag_is_present_in_list(struct flb_filter_aws *ctx, flb_sds_t tag,
+        const char *tags)
+{
+    const char *tag_start;
+    const char *tag_end;
+    const char *tag_sep_before;
+    const char *tags_start;
+    const char *tag_sep_after;
+    const char *tags_end;
+
+    tag_start = strstr(tags, tag);
+    if (!tag_start) {
+        return FLB_FALSE;
+    }
+    tag_end = tag_start + strlen(tag) - 1;
+
+    /* if substring exists it not necessarily implies that tag is included */
+    /* tag name must be exactly equal to a value between separators ',' */
+    /* f.e. without additional conditions, substring would accept Name for a,Namee,b */
+
+    tag_sep_before = (char*)(tag_start - 1);
+    tag_sep_after = (char*)(tag_end + 1);
+
+    tags_start = tags;
+    tags_end = tags + strlen(tags) - 1;
+    if (tag_sep_before < tags_start) {
+        tag_sep_before = NULL;
+    }
+    if (tag_sep_after > tags_end) {
+        tag_sep_after = NULL;
+    }
+
+    /* tag is present only if both of the following conditions are true */
+    /* 1. s == start of tags || s-1 is ',' */
+    if (tag_start != tags_start && (tag_sep_before && *tag_sep_before != ',')) {
+        return FLB_FALSE;
+    }
+    /* 2. e == end of tags || e+1 is ',' */
+    if (tag_end != tags_end && (tag_sep_after && *tag_sep_after != ',')) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+static int get_ec2_tag_enabled(struct flb_filter_aws *ctx)
+{
+    const char *tags_include;
+    const char *tags_exclude;
+    int i;
+    int tag_present;
+
+    /* if there are no tags, there is no need to evaluate which tag is enabled */
+    if (ctx->tags_count == 0) {
+        return 0;
+    }
+
+    /* allocate memory for 'tag_is_enabled' for all tags */
+    ctx->tag_is_enabled = flb_calloc(ctx->tags_count, sizeof(int));
+    if (!ctx->tag_is_enabled) {
+        flb_plg_error(ctx->ins, "Failed to allocate memory for tag_is_enabled");
+        return -1;
+    }
+
+    /* if tags_include and tags_exclude are not defined, set all tags as enabled */
+    for (i = 0; i < ctx->tags_count; i++) {
+        ctx->tag_is_enabled[i] = FLB_TRUE;
+    }
+
+    /* apply tags_included configuration */
+    tags_include = flb_filter_get_property("tags_include", ctx->ins);
+    if (tags_include) {
+        for (i = 0; i < ctx->tags_count; i++) {
+            tag_present = tag_is_present_in_list(ctx, ctx->tag_keys[i], tags_include);
+            /* tag is enabled if present in included list */
+            ctx->tag_is_enabled[i] = tag_present;
+        }
+    }
+
+    /* apply tags_excluded configuration, only if tags_included is not defined */
+    tags_exclude = flb_filter_get_property("tags_exclude", ctx->ins);
+    if (tags_include && tags_exclude) {
+        flb_plg_warn(ctx->ins, "specyfing tags_include and tags_exclude at the same time"
+                " is invalid, ignoring tags_exclude");
+    }
+    if (!tags_include && tags_exclude) {
+        for (i = 0; i < ctx->tags_count; i++) {
+            tag_present = tag_is_present_in_list(ctx, ctx->tag_keys[i], tags_exclude);
+            if (tag_present == FLB_TRUE) {
+                /* tag is excluded, so should be disabled */
+                ctx->tag_is_enabled[i] = FLB_FALSE;
+            } else {
+                /* tag is not excluded, therefore should be enabled */
+                ctx->tag_is_enabled[i] = FLB_TRUE;
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int get_ec2_tags(struct flb_filter_aws *ctx)
 {
+    int i;
     int ret;
 
     ctx->tags_fetched = FLB_FALSE;
@@ -455,6 +559,18 @@ static int get_ec2_tags(struct flb_filter_aws *ctx)
         return ret;
     }
 
+    ret = get_ec2_tag_enabled(ctx);
+    if (ret < 0) {
+        flb_filter_aws_tags_destroy(ctx);
+        return ret;
+    }
+
+    /* log tags debug information */
+    for (i = 0; i < ctx->tags_count; i++) {
+        flb_plg_debug(ctx->ins, "found tag %s which is included=%d",
+                ctx->tag_keys[i], ctx->tag_is_enabled[i]);
+    }
+
     ctx->tags_fetched = FLB_TRUE;
     return 0;
 }
@@ -466,6 +582,7 @@ static int get_ec2_tags(struct flb_filter_aws *ctx)
 static int get_ec2_metadata(struct flb_filter_aws *ctx)
 {
     int ret;
+    int i;
 
     if (ctx->instance_id_include && !ctx->instance_id) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_ID_PATH,
@@ -553,12 +670,16 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         ctx->new_keys++;
     }
 
-    if (ctx->tags_include && !ctx->tags_fetched) {
+    if (ctx->tags_enabled && !ctx->tags_fetched) {
         ret = get_ec2_tags(ctx);
         if (ret < 0) {
             return -1;
         }
-        ctx->new_keys += ctx->tags_count;
+        for (i = 0; i < ctx->tags_count; i++) {
+            if (ctx->tag_is_enabled[i] == FLB_TRUE) {
+                ctx->new_keys++;
+            }
+        }
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
@@ -722,15 +843,17 @@ static int cb_aws_filter(const void *data, size_t bytes,
                                   ctx->hostname, ctx->hostname_len);
         }
 
-        if (ctx->tags_include && ctx->tags_fetched) {
+        if (ctx->tags_enabled && ctx->tags_fetched) {
             for (i = 0; i < ctx->tags_count; i++) {
-                msgpack_pack_str(&tmp_pck, ctx->tag_keys_len[i]);
-                msgpack_pack_str_body(&tmp_pck,
-                                    ctx->tag_keys[i],
-                                    ctx->tag_keys_len[i]);
-                msgpack_pack_str(&tmp_pck, ctx->tag_values_len[i]);
-                msgpack_pack_str_body(&tmp_pck,
-                                    ctx->tag_values[i], ctx->tag_values_len[i]);
+                if (ctx->tag_is_enabled[i] == FLB_TRUE) {
+                    msgpack_pack_str(&tmp_pck, ctx->tag_keys_len[i]);
+                    msgpack_pack_str_body(&tmp_pck,
+                                        ctx->tag_keys[i],
+                                        ctx->tag_keys_len[i]);
+                    msgpack_pack_str(&tmp_pck, ctx->tag_values_len[i]);
+                    msgpack_pack_str_body(&tmp_pck,
+                                        ctx->tag_values[i], ctx->tag_values_len[i]);
+                }
             }
         }
     }
@@ -855,8 +978,25 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_BOOL, "tags_enabled", "false",
-     0, FLB_TRUE, offsetof(struct flb_filter_aws, tags_include),
-     "Enable EC2 instance tags"
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tags_enabled),
+     "Enable EC2 instance tags, "
+     "injects all tags if tags_include and tags_exclude are empty"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tags_include", "",
+     0, FLB_FALSE, 0,
+     "Defines list of specific EC2 tag keys to inject into the logs; "
+     "tag keys must be separated by \",\" character; "
+     "tags which are not present in this list will be ignored; "
+     "e.g.: \"Name,tag1,tag2\""
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tags_exclude", "",
+     0, FLB_FALSE, 0,
+     "Defines list of specific EC2 tag keys not to inject into the logs; "
+     "tag keys must be separated by \",\" character; "
+     "if tags_include is not empty then tags_exclude has no effect; "
+     "e.g.: \"Name,tag1,tag2\""
     },
     {0}
 };
